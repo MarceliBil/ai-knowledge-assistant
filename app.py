@@ -6,6 +6,40 @@ import os
 st.set_page_config(page_title="AI Knowledge Agent", layout="centered")
 st.title("AI Knowledge Agent")
 
+hide_ui = """
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+</style>
+"""
+st.markdown(hide_ui, unsafe_allow_html=True)
+
+custom_chat_css = """
+<style>
+.st-emotion-cache-khw9fs {
+    background-color: #f2f2f2;
+}
+
+.st-emotion-cache-z68l0b {
+    background-color: rgb(0 207 255);
+}
+
+[data-testid="stChatInput"] > div {
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    box-shadow: none !important;
+    border-radius: 9999px !important;
+}
+
+[data-testid="stChatInput"] > div:focus-within {
+    border: 1px solid #ffffff !important;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.4) !important;
+}
+</style>
+"""
+st.markdown(custom_chat_css, unsafe_allow_html=True)
+
+
 if "indexed" not in st.session_state:
     index_documents()
     st.session_state["indexed"] = True
@@ -36,15 +70,21 @@ if user_input:
         conversation += f"{msg['role'].upper()}: {msg['content']}\n"
 
     prompt = f"""
-You are a helpful AI knowledge assistant for a company.
-Use the following context from internal documents if relevant:
-{context}
+    You are a corporate knowledge assistant with access to internal company documents.
+    Your purpose is to answer only questions related to company policies, procedures, and internal knowledge.
+    If the user's question is unrelated to company knowledge, say very briefly you can only answer work-related or internal questions — without apologizing or mentioning missing materials.
 
-Chat history:
-{conversation}
+    Answer using only the information from the provided context below. 
+    If the context doesn't contain the answer, say very briefly that you can only respond to company-related questions.
 
-Now continue the conversation naturally, in the same language as the user.
-"""
+    Context:
+    {context}
+
+    Chat history:
+    {conversation}
+
+    Respond in the same language as the user and keep answers concise and professional.
+    """
 
     with st.spinner("Thinking..."):
         response = client.messages.create(
