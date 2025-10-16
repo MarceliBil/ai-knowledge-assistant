@@ -28,8 +28,10 @@ _token_expires_at = 0
 
 def get_dropbox_token():
     global _cached_token, _token_expires_at
+
     if _cached_token and time.time() < _token_expires_at:
         return _cached_token
+    
     resp = requests.post(
         "https://api.dropboxapi.com/oauth2/token",
         data={
@@ -39,6 +41,7 @@ def get_dropbox_token():
             "client_secret": DROPBOX_APP_SECRET,
         },
     )
+
     data = resp.json()
     _cached_token = data["access_token"]
     _token_expires_at = time.time() + data.get("expires_in", 14400) - 60
@@ -68,6 +71,7 @@ def fetch_dropbox_files(folder_path=""):
     dbx = get_dropbox_client()
     result = dbx.files_list_folder(folder_path)
     files = []
+
     for entry in result.entries:
         if isinstance(entry, dropbox.files.FileMetadata):
             _, res = dbx.files_download(entry.path_lower)
@@ -77,23 +81,29 @@ def fetch_dropbox_files(folder_path=""):
 
 def index_documents():
     files = fetch_dropbox_files()
+
     if not files:
         print(f"[{datetime.now().isoformat()}] No files found in Dropbox.")
         return
+    
     for name, data in files:
         text = extract_text(data, name)
         if not text:
             continue
         hash_value = hashlib.sha256(text.encode()).hexdigest()
         existing = supabase.table("documents").select("id").eq("hash", hash_value).execute()
+
         if existing.data:
             print(f"[{datetime.now().isoformat()}] Skipping unchanged file: {name}")
             continue
+
         chunk_size = 1000
         overlap = 200
         chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size - overlap)]
+
         for chunk in chunks:
             embedding = model.encode(chunk).tolist()
+
             supabase.table("documents").insert({
                 "content": chunk,
                 "embedding": embedding,
@@ -101,13 +111,16 @@ def index_documents():
                 "hash": hash_value,
                 "modified": datetime.now().isoformat()
             }).execute()
+
         print(f"[{datetime.now().isoformat()}] Indexed file: {name} (hash={hash_value[:8]})")
 
 
 def search_similar(query, top_k=5):
     query_vec = model.encode(query).tolist()
+
     response = supabase.rpc("match_documents", {
         "query_embedding": query_vec,
         "match_count": top_k
     }).execute()
+    
     return response.data

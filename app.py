@@ -2,6 +2,8 @@ import streamlit as st
 from anthropic import Anthropic
 from rag_engine import index_documents, search_similar
 import os
+import time
+
 
 st.set_page_config(page_title="AI Knowledge Agent", layout="centered")
 st.title("AI Knowledge Agent")
@@ -41,9 +43,12 @@ st.markdown(custom_chat_css, unsafe_allow_html=True)
 
 
 if "indexed" not in st.session_state:
-    index_documents()
+    with st.spinner("Loading company documents..."):
+        index_documents()
+        time.sleep(0.5)
     st.session_state["indexed"] = True
     st.success("Dropbox documents are up to date.")
+
 
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
