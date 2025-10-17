@@ -4,6 +4,9 @@ An intelligent company knowledge assistant built with **Streamlit**, **Claude (A
 It indexes internal documents stored in **Dropbox**, converts them into embeddings for semantic search, and answers user questions based strictly on company knowledge.
 
 ---
+<img width="1857" height="1198" alt="Zrzut ekranu (10)" src="https://github.com/user-attachments/assets/d878fba5-3ec9-4e52-845a-9d86e6b593a1" />
+
+
 
 ## 🧠 Overview
 
