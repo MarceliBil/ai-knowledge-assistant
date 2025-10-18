@@ -94,18 +94,16 @@ We will add the corresponding API keys to these variables later.
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your_service_role_key
-DROPBOX_APP_KEY=your_app_key
-DROPBOX_APP_SECRET=your_app_secret
-DROPBOX_REFRESH_TOKEN=your_refresh_token
+DROPBOX_ACCESS_TOKEN=your_access_token
 ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 <br>
 
 ### 5️⃣ Create a Supabase project
 
-Go to https://supabase.com → New Project
+1. Go to https://supabase.com → New Project
 
-Copy your Project URL (`SUPABASE_URL`) and Service Role key (`SUPABASE_KEY`) - and paste them into the previously created `.env` file.
+2. Copy your Project URL (`SUPABASE_URL`) and Service Role key (`SUPABASE_KEY`) - and paste them into the previously created `.env` file.
 <br>
 
 <br>
@@ -124,6 +122,7 @@ create table documents (
   embedding vector(384),
   source text,
   hash text unique,
+  file_hash text,
   modified timestamp default now()
 );
 
@@ -146,32 +145,45 @@ $$;
 
 1. Go to [Dropbox Developers](https://www.dropbox.com/developers) → Create App
 
-2. Choose `Scoped access` and App folder
-
-3. Copy your *App key* (`DROPBOX_APP_KEY`) and *App secret* (`DROPBOX_APP_SECRET`) - and paste them into the `.env` file.
+2. Choose `Scoped access` and next `Full Dropbox`
+   
 <br>
 
-### 8️⃣ Get your Dropbox refresh_token
+### 8️⃣ Set up the App Console
 
-1. Visit the authorization URL in your browser:
+1. In the **Permissions** tab, enable the following options:
 
-   https://www.dropbox.com/oauth2/authorize?client_id=YOUR_APP_KEY&token_access_type=offline&response_type=code
+<img width="1038" height="315" alt="image" src="https://github.com/user-attachments/assets/690d6cc7-70da-4498-b11b-97034a9ebeb1" />
 
-2. Log in and approve the app.
-3. Copy the code from the redirected URL and paste it into the `.env` file as `DROPBOX_REFRESH_TOKEN`. 
+<br>
+<br>
+
+2. In the **Settings** tab, generate the access token:
+   
+<img width="308" height="113" alt="image" src="https://github.com/user-attachments/assets/44748592-b119-4f29-b31a-decffd9a749a" />
+
+<br>
+<br>
+
+3. Copy the generated token and paste it into the `.env` file as `DROPBOX_ACCESS_TOKEN`.
+
+> ⚠️ **Note:**  
+> This access token is valid for approximately **4 hours**.  
+> For production use, it's recommended to switch to a **refresh token** for automatic renewal and longer validity.
+
 <br>
 
 ### 9️⃣ Upload your documents to Dropbox
 
-Place some documents into your app folder in Dropbox.  
+Place some documents into main the folder in Dropbox.  
 You can use the provided examples from the `sample_documents` folder (included in this repository),  
 or upload your `.txt`, `.pdf`, or `.docx` files. 
 <br>
 <br>
 
 ### 🔟 Get your Claude API key
-- Go to [Anthropic Console](https://console.anthropic.com)
-- Create an API key, copy it and paste it into the `.env` file as `ANTHROPIC_API_KEY`.
+1. Go to [Anthropic Console](https://console.anthropic.com)
+2. Create an API key, copy it and paste it into the `.env` file as `ANTHROPIC_API_KEY`.
 <br>
 
 ### 1️⃣1️⃣ Run the app
