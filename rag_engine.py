@@ -58,28 +58,34 @@ def index_documents():
         if not text:
             continue
         hash_value = hashlib.sha256(text.encode()).hexdigest()
-        existing = supabase.table("documents").select("id").eq("hash", hash_value).execute()
+        existing = supabase.table("documents").select("id").eq("file_hash", hash_value).execute()
 
-        if existing.data:
+        if existing.data and len(existing.data) > 0:
             print(f"[{datetime.now().isoformat()}] Skipping unchanged file: {name}")
             continue
+
+        print(f"[{datetime.now().isoformat()}] Indexing new or changed file: {name}")
+        supabase.table("documents").delete().eq("source", name).execute()
 
         chunk_size = 1000
         overlap = 200
         chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size - overlap)]
 
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
+            chunk_hash = hashlib.sha256(f"{hash_value}_{i}".encode()).hexdigest()
             embedding = model.encode(chunk).tolist()
 
-            supabase.table("documents").insert({
+            supabase.table("documents").upsert({
                 "content": chunk,
                 "embedding": embedding,
                 "source": name,
-                "hash": hash_value,
+                "hash": chunk_hash,
+                "file_hash": hash_value,
                 "modified": datetime.now().isoformat()
             }).execute()
 
-        print(f"[{datetime.now().isoformat()}] Indexed file: {name} (hash={hash_value[:8]})")
+        print(f"[{datetime.now().isoformat()}] Indexed file: {name} ({len(chunks)} chunks, hash={hash_value[:8]})")
+
 
 
 def search_similar(query, top_k=5):
