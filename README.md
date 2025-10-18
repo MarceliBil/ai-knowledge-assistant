@@ -93,7 +93,7 @@ We will add the corresponding API keys to these variables later.
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_service_role_key
+SUPABASE_KEY=your_publishable_key
 DROPBOX_ACCESS_TOKEN=your_access_token
 ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
@@ -103,7 +103,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 1. Go to https://supabase.com → New Project
 
-2. Copy your Project URL (`SUPABASE_URL`) and Service Role key (`SUPABASE_KEY`) - and paste them into the previously created `.env` file.
+2. Copy your Project URL (`SUPABASE_URL`) and Publishable key (`SUPABASE_KEY`) - from the tab **API Keys**, not *Legacy API Keys*! - and paste them into the previously created `.env` file.
 <br>
 
 <br>
