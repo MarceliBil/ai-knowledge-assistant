@@ -48,23 +48,36 @@ def fetch_dropbox_files(folder_path=""):
 
 def index_documents():
     files = fetch_dropbox_files()
+    current_time = datetime.now().isoformat()
 
     if not files:
-        print(f"[{datetime.now().isoformat()}] No files found in Dropbox.")
+        print(f"[{current_time}] No files found in Dropbox.")
         return
-    
+
+    dropbox_sources = [name for name, _ in files]
+
+    db_sources_resp = supabase.table("documents").select("source").execute()
+    db_sources = [r["source"] for r in db_sources_resp.data]
+
+    removed = set(db_sources) - set(dropbox_sources)
+
+    for name in removed:
+        supabase.table("documents").delete().eq("source", name).execute()
+        print(f"[{current_time}] Removed deleted file: {name}")
+
     for name, data in files:
         text = extract_text(data, name)
         if not text:
             continue
+
         hash_value = hashlib.sha256(text.encode()).hexdigest()
         existing = supabase.table("documents").select("id").eq("file_hash", hash_value).execute()
 
         if existing.data and len(existing.data) > 0:
-            print(f"[{datetime.now().isoformat()}] Skipping unchanged file: {name}")
+            print(f"[{current_time}] Skipping unchanged file: {name}")
             continue
 
-        print(f"[{datetime.now().isoformat()}] Indexing new or changed file: {name}")
+        print(f"[{current_time}] Indexing new or changed file: {name}")
         supabase.table("documents").delete().eq("source", name).execute()
 
         chunk_size = 1000
@@ -81,7 +94,7 @@ def index_documents():
                 "source": name,
                 "hash": chunk_hash,
                 "file_hash": hash_value,
-                "modified": datetime.now().isoformat()
+                "modified": current_time
             }).execute()
 
         print(f"[{datetime.now().isoformat()}] Indexed file: {name} ({len(chunks)} chunks, hash={hash_value[:8]})")
