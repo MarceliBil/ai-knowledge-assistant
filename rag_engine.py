@@ -17,8 +17,10 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
+
 def get_dropbox_client():
-    return dropbox.Dropbox(os.getenv("DROPBOX_ACCESS_TOKEN"));
+    return dropbox.Dropbox(os.getenv("DROPBOX_ACCESS_TOKEN"))
+
 
 def extract_text(file_bytes, filename):
     if filename.endswith(".pdf"):
@@ -71,7 +73,8 @@ def index_documents():
             continue
 
         hash_value = hashlib.sha256(text.encode()).hexdigest()
-        existing = supabase.table("documents").select("id").eq("file_hash", hash_value).execute()
+        existing = supabase.table("documents").select(
+            "id").eq("file_hash", hash_value).execute()
 
         if existing.data and len(existing.data) > 0:
             print(f"[{current_time}] Skipping unchanged file: {name}")
@@ -80,12 +83,14 @@ def index_documents():
         print(f"[{current_time}] Indexing new or changed file: {name}")
         supabase.table("documents").delete().eq("source", name).execute()
 
-        chunk_size = 1000
+        chunk_size = 512
         overlap = 200
-        chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size - overlap)]
+        chunks = [text[i:i + chunk_size]
+                  for i in range(0, len(text), chunk_size - overlap)]
 
         for i, chunk in enumerate(chunks):
-            chunk_hash = hashlib.sha256(f"{hash_value}_{i}".encode()).hexdigest()
+            chunk_hash = hashlib.sha256(
+                f"{hash_value}_{i}".encode()).hexdigest()
             embedding = model.encode(chunk).tolist()
 
             supabase.table("documents").upsert({
@@ -100,7 +105,6 @@ def index_documents():
         print(f"[{datetime.now().isoformat()}] Indexed file: {name} ({len(chunks)} chunks, hash={hash_value[:8]})")
 
 
-
 def search_similar(query, top_k=5):
     query_vec = model.encode(query).tolist()
 
@@ -108,5 +112,5 @@ def search_similar(query, top_k=5):
         "query_embedding": query_vec,
         "match_count": top_k
     }).execute()
-    
+
     return response.data
