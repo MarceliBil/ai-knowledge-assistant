@@ -80,7 +80,7 @@ def fetch_dropbox_files(folder_path=""):
             if isinstance(entry, dropbox.files.FileMetadata):
                 try:
                     _, res = dbx.files_download(entry.path_lower)
-                    files.append((entry.name, res.content))
+                    files.append((entry.path_lower, res.content))
                 except Exception:
                     continue
         if result.has_more:
@@ -101,7 +101,7 @@ def index_documents():
             print(f"[{current_time}] No files found in Dropbox.")
             return
 
-        dropbox_sources = [name for name, _ in files]
+        dropbox_sources = [path for path, _ in files]
 
         db = get_supabase()
         db_sources_resp = db.table("documents").select("source").execute()
@@ -109,12 +109,12 @@ def index_documents():
 
         removed = set(db_sources) - set(dropbox_sources)
 
-        for name in removed:
-            db.table("documents").delete().eq("source", name).execute()
-            print(f"[{current_time}] Removed deleted file: {name}")
+        for path in removed:
+            db.table("documents").delete().eq("source", path).execute()
+            print(f"[{current_time}] Removed deleted file: {path}")
 
-        for name, data in files:
-            text = extract_text(data, name)
+        for path, data in files:
+            text = extract_text(data, path)
             if not text:
                 continue
 
@@ -123,11 +123,11 @@ def index_documents():
                 "id").eq("file_hash", hash_value).execute()
 
             if existing.data and len(existing.data) > 0:
-                print(f"[{current_time}] Skipping unchanged file: {name}")
+                print(f"[{current_time}] Skipping unchanged file: {path}")
                 continue
 
-            print(f"[{current_time}] Indexing new or changed file: {name}")
-            db.table("documents").delete().eq("source", name).execute()
+            print(f"[{current_time}] Indexing new or changed file: {path}")
+            db.table("documents").delete().eq("source", path).execute()
 
             chunk_size = 512
             overlap = 200
@@ -143,14 +143,14 @@ def index_documents():
                 db.table("documents").upsert({
                     "content": chunk,
                     "embedding": embedding,
-                    "source": name,
+                    "source": path,
                     "chunk_hash": chunk_hash,
                     "file_hash": hash_value,
                     "modified": current_time
                 }).execute()
 
             print(
-                f"[{datetime.now().isoformat()}] Indexed file: {name} ({len(chunks)} chunks, hash={hash_value[:8]})")
+                f"[{datetime.now().isoformat()}] Indexed file: {path} ({len(chunks)} chunks, hash={hash_value[:8]})")
     finally:
         _indexing_in_progress = False
 
