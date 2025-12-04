@@ -1,5 +1,7 @@
 import streamlit as st
 from anthropic import Anthropic
+import threading
+import rag_engine
 from rag_engine import index_documents, search_similar
 import os
 import time
@@ -43,10 +45,32 @@ st.markdown(custom_chat_css, unsafe_allow_html=True)
 
 
 if "indexed" not in st.session_state:
-    with st.spinner("Loading company documents..."):
-        index_documents()
-        time.sleep(0.5)
-    st.session_state["indexed"] = True
+    st.session_state["indexed"] = False
+    st.session_state["indexing"] = False
+
+
+def _start_indexing_background():
+    if rag_engine._indexing_in_progress:
+        return
+
+    def _target():
+
+        try:
+            index_documents()
+        except Exception as e:
+            print("Indexing failed:", e)
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()
+    st.session_state["indexing"] = True
+
+
+if not rag_engine._indexing_in_progress and not st.session_state.get("indexed") and not st.session_state.get("indexing"):
+    _start_indexing_background()
+
+if rag_engine._indexing_in_progress or st.session_state.get("indexing"):
+    st.info("Indexing in background — refresh or wait for completion.")
+elif st.session_state.get("indexed"):
     st.success("Dropbox documents are up to date.")
 
 
@@ -65,10 +89,14 @@ user_input = st.chat_input("Ask a question...")
 
 if user_input:
     st.chat_message("user").markdown(user_input)
-    st.session_state["chat_history"].append({"role": "user", "content": user_input})
+    st.session_state["chat_history"].append(
+        {"role": "user", "content": user_input})
 
     results = search_similar(user_input)
     context = "\n\n".join(r["content"] for r in results or [])
+    context_note = ""
+    if not context:
+        context_note = "No internal documents are available at the moment; answer based on general knowledge."
 
     conversation = ""
     for msg in st.session_state["chat_history"]:
@@ -95,6 +123,8 @@ if user_input:
     Context:
     {context}
 
+    {context_note}
+
     Chat history:
     {conversation}
 
@@ -110,4 +140,5 @@ if user_input:
 
     answer = response.content[0].text.strip()
     st.chat_message("assistant").markdown(answer)
-    st.session_state["chat_history"].append({"role": "assistant", "content": answer})
+    st.session_state["chat_history"].append(
+        {"role": "assistant", "content": answer})

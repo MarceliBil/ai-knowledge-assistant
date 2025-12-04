@@ -1,6 +1,7 @@
 import os
 import io
 import hashlib
+import tempfile
 from datetime import datetime
 import pdfplumber
 import docx2txt
@@ -14,12 +15,34 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-model = SentenceTransformer("all-MiniLM-L6-v2")
+_supabase = None
+_model = None
+
+_indexing_in_progress = False
+
+
+def get_supabase():
+    global _supabase
+    if _supabase is None:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise RuntimeError(
+                "SUPABASE_URL and SUPABASE_KEY must be set in environment")
+        _supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _supabase
+
+
+def get_model():
+    global _model
+    if _model is None:
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
 
 
 def get_dropbox_client():
-    return dropbox.Dropbox(os.getenv("DROPBOX_ACCESS_TOKEN"))
+    token = os.getenv("DROPBOX_ACCESS_TOKEN")
+    if not token:
+        raise RuntimeError("DROPBOX_ACCESS_TOKEN must be set in environment")
+    return dropbox.Dropbox(token)
 
 
 def extract_text(file_bytes, filename):
@@ -27,10 +50,18 @@ def extract_text(file_bytes, filename):
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             return "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
     elif filename.endswith(".docx"):
-        tmp = "/tmp/temp.docx"
-        with open(tmp, "wb") as f:
-            f.write(file_bytes)
-        return docx2txt.process(tmp)
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmpf:
+                tmp_path = tmpf.name
+                tmpf.write(file_bytes)
+            text = docx2txt.process(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            return text
+        except Exception:
+            return ""
     elif filename.endswith(".txt"):
         return file_bytes.decode("utf-8", errors="ignore")
     return ""
@@ -38,79 +69,106 @@ def extract_text(file_bytes, filename):
 
 def fetch_dropbox_files(folder_path=""):
     dbx = get_dropbox_client()
-    result = dbx.files_list_folder(folder_path)
     files = []
+    try:
+        result = dbx.files_list_folder(folder_path)
+    except Exception:
+        return files
 
-    for entry in result.entries:
-        if isinstance(entry, dropbox.files.FileMetadata):
-            _, res = dbx.files_download(entry.path_lower)
-            files.append((entry.name, res.content))
+    while True:
+        for entry in result.entries:
+            if isinstance(entry, dropbox.files.FileMetadata):
+                try:
+                    _, res = dbx.files_download(entry.path_lower)
+                    files.append((entry.name, res.content))
+                except Exception:
+                    continue
+        if result.has_more:
+            result = dbx.files_list_folder_continue(result.cursor)
+        else:
+            break
     return files
 
 
 def index_documents():
-    files = fetch_dropbox_files()
-    current_time = datetime.now().isoformat()
+    global _indexing_in_progress
+    _indexing_in_progress = True
+    try:
+        files = fetch_dropbox_files()
+        current_time = datetime.now().isoformat()
 
-    if not files:
-        print(f"[{current_time}] No files found in Dropbox.")
-        return
+        if not files:
+            print(f"[{current_time}] No files found in Dropbox.")
+            return
 
-    dropbox_sources = [name for name, _ in files]
+        dropbox_sources = [name for name, _ in files]
 
-    db_sources_resp = supabase.table("documents").select("source").execute()
-    db_sources = [r["source"] for r in db_sources_resp.data]
+        db = get_supabase()
+        db_sources_resp = db.table("documents").select("source").execute()
+        db_sources = [r["source"] for r in (db_sources_resp.data or [])]
 
-    removed = set(db_sources) - set(dropbox_sources)
+        removed = set(db_sources) - set(dropbox_sources)
 
-    for name in removed:
-        supabase.table("documents").delete().eq("source", name).execute()
-        print(f"[{current_time}] Removed deleted file: {name}")
+        for name in removed:
+            db.table("documents").delete().eq("source", name).execute()
+            print(f"[{current_time}] Removed deleted file: {name}")
 
-    for name, data in files:
-        text = extract_text(data, name)
-        if not text:
-            continue
+        for name, data in files:
+            text = extract_text(data, name)
+            if not text:
+                continue
 
-        hash_value = hashlib.sha256(text.encode()).hexdigest()
-        existing = supabase.table("documents").select(
-            "id").eq("file_hash", hash_value).execute()
+            hash_value = hashlib.sha256(text.encode()).hexdigest()
+            existing = db.table("documents").select(
+                "id").eq("file_hash", hash_value).execute()
 
-        if existing.data and len(existing.data) > 0:
-            print(f"[{current_time}] Skipping unchanged file: {name}")
-            continue
+            if existing.data and len(existing.data) > 0:
+                print(f"[{current_time}] Skipping unchanged file: {name}")
+                continue
 
-        print(f"[{current_time}] Indexing new or changed file: {name}")
-        supabase.table("documents").delete().eq("source", name).execute()
+            print(f"[{current_time}] Indexing new or changed file: {name}")
+            db.table("documents").delete().eq("source", name).execute()
 
-        chunk_size = 512
-        overlap = 200
-        chunks = [text[i:i + chunk_size]
-                  for i in range(0, len(text), chunk_size - overlap)]
+            chunk_size = 512
+            overlap = 200
+            chunks = [text[i:i + chunk_size]
+                      for i in range(0, len(text), chunk_size - overlap)]
 
-        for i, chunk in enumerate(chunks):
-            chunk_hash = hashlib.sha256(
-                f"{hash_value}_{i}".encode()).hexdigest()
-            embedding = model.encode(chunk).tolist()
+            model = get_model()
+            for i, chunk in enumerate(chunks):
+                chunk_hash = hashlib.sha256(
+                    f"{hash_value}_{i}".encode()).hexdigest()
+                embedding = model.encode(chunk).tolist()
 
-            supabase.table("documents").upsert({
-                "content": chunk,
-                "embedding": embedding,
-                "source": name,
-                "hash": chunk_hash,
-                "file_hash": hash_value,
-                "modified": current_time
-            }).execute()
+                db.table("documents").upsert({
+                    "content": chunk,
+                    "embedding": embedding,
+                    "source": name,
+                    "chunk_hash": chunk_hash,
+                    "file_hash": hash_value,
+                    "modified": current_time
+                }).execute()
 
-        print(f"[{datetime.now().isoformat()}] Indexed file: {name} ({len(chunks)} chunks, hash={hash_value[:8]})")
+            print(
+                f"[{datetime.now().isoformat()}] Indexed file: {name} ({len(chunks)} chunks, hash={hash_value[:8]})")
+    finally:
+        _indexing_in_progress = False
 
 
 def search_similar(query, top_k=5):
-    query_vec = model.encode(query).tolist()
+    if _indexing_in_progress:
+        return []
 
-    response = supabase.rpc("match_documents", {
-        "query_embedding": query_vec,
-        "match_count": top_k
-    }).execute()
+    try:
+        model = get_model()
+        query_vec = model.encode(query).tolist()
 
-    return response.data
+        db = get_supabase()
+        response = db.rpc("match_documents", {
+            "query_embedding": query_vec,
+            "match_count": top_k
+        }).execute()
+
+        return response.data or []
+    except Exception:
+        return []
